@@ -379,7 +379,7 @@ class CombinedNetworkSecurityToolkit:
 def register_pipelines():
     toolkit = CombinedNetworkSecurityToolkit()
     pipeline = Pipeline(
-        name="combined_network_security_pipeline",
+        name="network_toolkit_pipeline",
         description="Comprehensive pipeline for network and security diagnostics including SSL checks, port scans, subdomain enumeration, CSP reports, HTTP checks, API validation, TCP scanning, and load time measurement."
     )
 
@@ -397,7 +397,7 @@ def register_pipelines():
     pipeline.add_component(toolkit.tcp_service_scan, input_model=TCPServiceScannerInput)
     pipeline.add_component(toolkit.load_time_measurement, input_model=LoadTimeMeasurementInput)
 
-    return {"combined_network_security_pipeline": pipeline}
+    return {"network_toolkit_pipeline": pipeline}
 
 # Initialize and Run the Application
 app = PipelineApp(register_pipelines=register_pipelines)
