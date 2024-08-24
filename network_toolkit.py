@@ -1,4 +1,16 @@
-# Import necessary modules from Open-WebUI
+"""
+title: Network Diagnostics Toolkit
+description: Comprehensive pipeline for network and security diagnostics including SSL checks, port scans, subdomain enumeration, CSP reports, HTTP checks, API validation, TCP scanning, and load time measurement.
+author: pd@suicidebutton.com
+date: 2024-08-28
+version: 1.0
+requirements:
+  - open-webui
+  - pydantic
+  - requests
+  - aiohttp
+"""
+
 from open_webui import Pipeline, PipelineApp, component
 from pydantic import BaseModel, Field
 from typing import Callable, Any, Optional
@@ -396,4 +408,6 @@ app = PipelineApp(register_pipelines=register_pipelines)
 if __name__ == "__main__":
     app.run()
 
-
+# Ensure the `app` is exposed for ASGI
+if __name__ != "__main__":
+    from network_toolkit import app
