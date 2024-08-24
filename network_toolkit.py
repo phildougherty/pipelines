@@ -4,11 +4,8 @@ description: Comprehensive pipeline for network and security diagnostics includi
 author: pd@suicidebutton.com
 date: 2024-08-28
 version: 1.0
-requirements:
-  - open-webui
-  - pydantic
-  - requests
-  - aiohttp
+license: MIT
+requirements: pydantic, requests, aiohttp
 """
 
 from open_webui import Pipeline, PipelineApp, component
