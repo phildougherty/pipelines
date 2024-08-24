@@ -1,13 +1,12 @@
 """
 title: Network Diagnostics Toolkit
-description: Comprehensive pipeline for network and security diagnostics including SSL checks, port scans, subdomain enumeration, CSP reports, HTTP checks, API validation, TCP scanning, and load time measurement.
+description: Comprehensive toolkit for network and security diagnostics including SSL checks, port scans, subdomain enumeration, CSP reports, HTTP checks, API validation, TCP scanning, and load time measurement.
 author: pd@suicidebutton.com
 date: 2024-08-24
 version: 1.0
-requirements: pipelines,pydantic,requests,aiohttp,sublist3r,uvicorn
+requirements: pydantic,requests,aiohttp,sublist3r,uvicorn,fastapi
 """
 
-from pipelines import Pipeline, PipelineApp, component
 from pydantic import BaseModel, Field
 from typing import Callable, Any, Optional
 import ssl
@@ -19,6 +18,8 @@ import asyncio
 import aiohttp
 import logging
 import time
+from fastapi import FastAPI, BackgroundTasks
+from fastapi.responses import JSONResponse
 
 # Input Models for the Components
 class SSLCheckInput(BaseModel):
@@ -83,7 +84,6 @@ class EventEmitter:
             )
 
 # Component Functions
-@component
 async def ssl_check(args: SSLCheckInput, event_emitter: Callable[[dict], Any] = None) -> str:
     emitter = EventEmitter(event_emitter)
     await emitter.emit(f"Checking SSL certificate for {args.domain}...")
@@ -104,7 +104,6 @@ async def ssl_check(args: SSLCheckInput, event_emitter: Callable[[dict], Any] = 
         await emitter.emit(f"SSL check error for {args.domain}: {str(e)}", "error", True)
         return json.dumps({"error": str(e)})
 
-@component
 async def port_vulnerability_scan(args: PortVulnerabilityScanInput, event_emitter: Callable[[dict], Any] = None) -> str:
     emitter = EventEmitter(event_emitter)
     await emitter.emit(f"Scanning ports for vulnerabilities on {args.host}...")
@@ -119,7 +118,6 @@ async def port_vulnerability_scan(args: PortVulnerabilityScanInput, event_emitte
         await emitter.emit(f"Error during port vulnerability scan: {e.output.decode('utf-8')}", "error", True)
         return json.dumps({"error": e.output.decode("utf-8")})
 
-@component
 async def subdomain_enumeration(args: SubdomainEnumerationInput, event_emitter: Callable[[dict], Any] = None) -> str:
     emitter = EventEmitter(event_emitter)
     await emitter.emit(f"Enumerating subdomains for {args.domain}...")
@@ -133,7 +131,6 @@ async def subdomain_enumeration(args: SubdomainEnumerationInput, event_emitter: 
         await emitter.emit(f"Error during subdomain enumeration: {str(e)}", "error", True)
         return json.dumps({"error": str(e)})
 
-@component
 async def csp_report(args: CSPReportInput, event_emitter: Callable[[dict], Any] = None) -> str:
     emitter = EventEmitter(event_emitter)
     await emitter.emit(f"Checking Content Security Policy (CSP) for {args.domain}...")
@@ -146,7 +143,6 @@ async def csp_report(args: CSPReportInput, event_emitter: Callable[[dict], Any] 
         await emitter.emit(f"Error during CSP check: {str(e)}", "error", True)
         return json.dumps({"error": str(e)})
 
-@component
 async def ping_test(args: PingTestInput, event_emitter: Callable[[dict], Any] = None) -> str:
     emitter = EventEmitter(event_emitter)
     await emitter.emit(f"Running ping test to {args.target}...")
@@ -163,7 +159,6 @@ async def ping_test(args: PingTestInput, event_emitter: Callable[[dict], Any] = 
         await emitter.emit(f"Ping test error: {str(e)}", "error", True)
         return str(e)
 
-@component
 async def mtu_discovery(args: MTUDiscoveryInput, event_emitter: Callable[[dict], Any] = None) -> str:
     emitter = EventEmitter(event_emitter)
     await emitter.emit(f"Discovering MTU for {args.target}...")
@@ -183,7 +178,6 @@ async def mtu_discovery(args: MTUDiscoveryInput, event_emitter: Callable[[dict],
         await emitter.emit(f"MTU discovery error: {str(e)}", "error", True)
         return json.dumps({"error": str(e)})
 
-@component
 async def traceroute(args: TraceRouteInput, event_emitter: Callable[[dict], Any] = None) -> str:
     emitter = EventEmitter(event_emitter)
     await emitter.emit(f"Running traceroute to {args.target}...")
@@ -200,7 +194,6 @@ async def traceroute(args: TraceRouteInput, event_emitter: Callable[[dict], Any]
         await emitter.emit(f"Traceroute error: {str(e)}", "error", True)
         return str(e)
 
-@component
 async def multi_protocol_test(args: MultiProtocolTestInput, event_emitter: Callable[[dict], Any] = None) -> str:
     emitter = EventEmitter(event_emitter)
     await emitter.emit(f"Running multi-protocol test for {args.target}...")
@@ -221,7 +214,6 @@ async def multi_protocol_test(args: MultiProtocolTestInput, event_emitter: Calla
         await emitter.emit(f"Multi-protocol test error: {str(e)}", "error", True)
         return str(e)
 
-@component
 async def http_endpoint_check(args: HTTPEndpointCheckInput, event_emitter: Callable[[dict], Any] = None) -> str:
     emitter = EventEmitter(event_emitter)
     await emitter.emit(f"Checking HTTP/HTTPS endpoint: {args.url}...")
@@ -234,7 +226,6 @@ async def http_endpoint_check(args: HTTPEndpointCheckInput, event_emitter: Calla
         await emitter.emit(f"Endpoint check for {args.url} failed: {str(e)}", "error", True)
         return str(e)
 
-@component
 async def api_response_validator(args: APIResponseValidatorInput, event_emitter: Callable[[dict], Any] = None) -> str:
     emitter = EventEmitter(event_emitter)
     await emitter.emit(f"Validating API response from {args.url}...")
@@ -271,7 +262,6 @@ def validate_structure(response: dict, expected_structure: dict) -> bool:
 
     return validate(response, expected_structure)
 
-@component
 async def tcp_service_scan(args: TCPServiceScannerInput, event_emitter: Callable[[dict], Any] = None) -> str:
     emitter = EventEmitter(event_emitter)
     await emitter.emit(f"Scanning TCP services on host {args.host} in range {args.port_range}...")
@@ -294,7 +284,6 @@ def check_port(host: str, port: int) -> bool:
         result = sock.connect_ex((host, port))
         return result == 0
 
-@component
 async def load_time_measurement(args: LoadTimeMeasurementInput, event_emitter: Callable[[dict], Any] = None) -> str:
     emitter = EventEmitter(event_emitter)
     await emitter.emit(f"Measuring load time for web page {args.url}...")
@@ -312,33 +301,68 @@ async def load_time_measurement(args: LoadTimeMeasurementInput, event_emitter: C
         await emitter.emit(f"Error measuring load time for {args.url}: {str(e)}", "error", True)
         return str(e)
 
-# Register the pipeline
-def register_pipelines():
-    pipeline = Pipeline(
-        name="network_toolkit_pipeline",
-        description="Comprehensive pipeline for network and security diagnostics.",
-    )
+# Main function to run all components
+async def run_network_diagnostics(target: str, event_emitter: Callable[[dict], Any] = None):
+    results = {}
+    emitter = EventEmitter(event_emitter)
 
-    # Register all components to the pipeline
-    pipeline.add_component(ssl_check)
-    pipeline.add_component(port_vulnerability_scan)
-    pipeline.add_component(subdomain_enumeration)
-    pipeline.add_component(csp_report)
-    pipeline.add_component(ping_test)
-    pipeline.add_component(mtu_discovery)
-    pipeline.add_component(traceroute)
-    pipeline.add_component(multi_protocol_test)
-    pipeline.add_component(http_endpoint_check)
-    pipeline.add_component(api_response_validator)
-    pipeline.add_component(tcp_service_scan)
-    pipeline.add_component(load_time_measurement)
+    # SSL Check
+    await emitter.emit("Starting SSL Check")
+    ssl_result = await ssl_check(SSLCheckInput(domain=target), event_emitter)
+    results["ssl_check"] = ssl_result
 
-    return {"network_toolkit_pipeline": pipeline}
+    # Port Vulnerability Scan
+    await emitter.emit("Starting Port Vulnerability Scan")
+    port_scan_result = await port_vulnerability_scan(PortVulnerabilityScanInput(host=target), event_emitter)
+    results["port_vulnerability_scan"] = port_scan_result
 
-# Initialize the PipelineApp
-app = PipelineApp(register_pipelines=register_pipelines)
+    # Subdomain Enumeration
+    await emitter.emit("Starting Subdomain Enumeration")
+    subdomain_result = await subdomain_enumeration(SubdomainEnumerationInput(domain=target), event_emitter)
+    results["subdomain_enumeration"] = subdomain_result
 
-# Expose the app directly for ASGI
+    # CSP Report
+    await emitter.emit("Starting CSP Report")
+    csp_result = await csp_report(CSPReportInput(domain=target), event_emitter)
+    results["csp_report"] = csp_result
+
+    # Multi-Protocol Test
+    await emitter.emit("Starting Multi-Protocol Test")
+    multi_protocol_result = await multi_protocol_test(MultiProtocolTestInput(target=target), event_emitter)
+    results["multi_protocol_test"] = multi_protocol_result
+
+    # HTTP Endpoint Check
+    await emitter.emit("Starting HTTP Endpoint Check")
+    http_result = await http_endpoint_check(HTTPEndpointCheckInput(url=f"https://{target}"), event_emitter)
+    results["http_endpoint_check"] = http_result
+
+    # TCP Service Scan
+    await emitter.emit("Starting TCP Service Scan")
+    tcp_scan_result = await tcp_service_scan(TCPServiceScannerInput(host=target, port_range="1-1000"), event_emitter)
+    results["tcp_service_scan"] = tcp_scan_result
+
+    # Load Time Measurement
+    await emitter.emit("Starting Load Time Measurement")
+    load_time_result = await load_time_measurement(LoadTimeMeasurementInput(url=f"https://{target}"), event_emitter)
+    results["load_time_measurement"] = load_time_result
+
+    await emitter.emit("Network Diagnostics Complete", "success", True)
+    return results
+
+# FastAPI app
+app = FastAPI()
+
+@app.post("/run_diagnostics")
+async def run_diagnostics(target: str, background_tasks: BackgroundTasks):
+    async def run_in_background():
+        results = await run_network_diagnostics(target)
+        # Here you would typically store or process the results
+        logging.info(f"Diagnostics completed for {target}")
+        logging.info(f"Results: {results}")
+
+    background_tasks.add_task(run_in_background)
+    return JSONResponse(content={"message": "Diagnostics started", "target": target})
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8000
