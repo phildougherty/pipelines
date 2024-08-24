@@ -1,0 +1,39 @@
+{
+  "security_compliance_pipeline": {
+    "description": "Pipeline for security and compliance diagnostics including SSL checks, port vulnerability scans, subdomain enumeration, and CSP reports.",
+    "valves": {
+      "ssl_check": {
+        "description": "Check SSL certificate details for a domain.",
+        "function": "ssl_check_valve",
+        "input_model": "SSLCheckInput"
+      },
+      "port_vulnerability_scan": {
+        "description": "Scan ports on a host for vulnerabilities using nmap.",
+        "function": "port_vulnerability_scan_valve",
+        "input_model": "PortVulnerabilityScanInput"
+      },
+      "subdomain_enumeration": {
+        "description": "Enumerate subdomains for a given domain.",
+        "function": "subdomain_enumeration_valve",
+        "input_model": "SubdomainEnumerationInput"
+      },
+      "csp_report": {
+        "description": "Generate a Content Security Policy (CSP) report for a domain.",
+        "function": "csp_report_valve",
+        "input_model": "CSPReportInput"
+      },
+      "security_headers_check": {
+        "description": "Check security headers of a website for best practices.",
+        "function": "security_headers_check_valve",
+        "input_model": "SecurityHeadersCheckInput"
+      },
+      "vulnerability_check": {
+        "description": "Perform a basic vulnerability check on a domain.",
+        "function": "vulnerability_check_valve",
+        "input_model": "VulnerabilityCheckInput"
+      }
+    },
+    "filters": [],
+    "pipes": []
+  }
+}

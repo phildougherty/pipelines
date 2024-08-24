@@ -1,6 +1,0 @@
-ping3
-scapy
-sublist3r
-sslyze
-pydantic
-python-nmap

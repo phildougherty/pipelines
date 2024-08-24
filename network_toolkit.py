@@ -3,48 +3,23 @@ title: General Networking Toolkit
 author: Phil Dougherty
 email: pd@suicidebutton.com
 date: 2024-08-24
-version: 1.0
+version: 2.0
 license: MIT
-description: General tools for networking diagnostics and testing.
+description: Toolkit for general network diagnostics including ICMP, UDP, and routing tests.
 """
 
-import logging
-import json
 import asyncio
+import logging
 import socket
-import python_nmap
-import speedtest
+import subprocess
 from pydantic import BaseModel, Field
-from typing import Optional, Callable, Any
+from typing import Callable, Any
 
+logging.basicConfig(level=logging.INFO)
 
-# Input models
-class NetworkScanInput(BaseModel):
-    target: str = Field(
-        ...,
-        description="The target to scan (IP, hostname, or domain, e.g., '192.168.1.1', 'google.com').",
-    )
-
-
-class SpeedTestInput(BaseModel):
-    service: Optional[str] = Field(
-        None, description="The speed test service to use (e.g., 'fast', 'ookla')."
-    )
-
-
-# Event emitter class for OpenWebUI
 class EventEmitter:
     def __init__(self, event_emitter: Callable[[dict], Any] = None):
         self.event_emitter = event_emitter
-
-    async def progress_update(self, description):
-        await self.emit(description)
-
-    async def error_update(self, description):
-        await self.emit(description, "error", True)
-
-    async def success_update(self, description):
-        await self.emit(description, "success", True)
 
     async def emit(self, description="Unknown State", status="in_progress", done=False):
         if self.event_emitter:
@@ -59,120 +34,162 @@ class EventEmitter:
                 }
             )
 
+class PingTestInput(BaseModel):
+    target: str = Field(
+        ..., description="The target IP or domain to ping (e.g., '8.8.8.8', 'google.com')."
+    )
+    count: int = Field(
+        default=4, description="Number of ping requests to send."
+    )
 
-# General networking toolkit class
-class GeneralNetworkingToolkit:
-    def __init__(self):
-        self.default_timeout = 5  # Default timeout for network operations in seconds
-        self.nm = python_nmap.PortScanner()
+class MTUDiscoveryInput(BaseModel):
+    target: str = Field(
+        ..., description="The target IP or domain to discover MTU (e.g., '8.8.8.8', 'google.com')."
+    )
 
-    async def execute_command(self, command: list, emitter: EventEmitter) -> str:
-        """Executes a shell command and handles errors."""
-        try:
-            output = (
-                subprocess.check_output(
-                    command, stderr=subprocess.STDOUT, timeout=self.default_timeout
-                )
-                .decode("utf-8")
-                .strip()
-            )
-            if not output:
-                raise ValueError(f"No output from command: {' '.join(command)}")
-            return output
-        except subprocess.CalledProcessError as e:
-            await emitter.error_update(
-                f"Error executing {' '.join(command)}: {e.output.decode('utf-8')}"
-            )
-            raise
-        except IndexError as e:
-            await emitter.error_update(
-                f"Index error in processing command output: {' '.join(command)}"
-            )
-            raise
+class TraceRouteInput(BaseModel):
+    target: str = Field(
+        ..., description="The target IP or domain for traceroute (e.g., '8.8.8.8', 'google.com')."
+    )
 
-    async def network_scan(self, target: str, __event_emitter__: Callable[[dict], Any] = None) -> str:
-        """
-        Perform a network scan on the specified target using python-nmap.
+class MultiProtocolTestInput(BaseModel):
+    target: str = Field(
+        ..., description="The target IP or domain to test (e.g., '8.8.8.8', 'google.com')."
+    )
 
-        :param target: The target to scan (IP, hostname, or domain).
-        :param __event_emitter__: Optional callable for emitting events to OpenWebUI.
-        :return: The output of the network scan as JSON.
-        """
+class Tools:
+    async def ping_test(self, args: PingTestInput, __event_emitter__: Callable[[dict], Any] = None) -> str:
         emitter = EventEmitter(__event_emitter__)
-        await emitter.progress_update(f"Starting network scan for {target}...")
+        await emitter.emit(f"Running ping test to {args.target}...")
 
         try:
-            scan_result = self.nm.scan(target, arguments='-sP')  # Ping scan
-            await emitter.success_update(f"Network scan for {target} complete!")
-            return json.dumps(scan_result)
+            command = ['ping', '-c', str(args.count), args.target]
+            result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            if result.returncode == 0:
+                await emitter.emit(f"Ping test to {args.target} succeeded.", "success", True)
+                return result.stdout
+            else:
+                await emitter.emit(f"Ping test to {args.target} failed.", "error", True)
+                return result.stderr
         except Exception as e:
-            await emitter.error_update(f"Exception during network scan: {e}")
-            return json.dumps({"error": str(e)})
+            await emitter.emit(f"Ping test error: {str(e)}", "error", True)
+            return str(e)
 
-    async def speed_test(self, __event_emitter__: Callable[[dict], Any] = None) -> str:
-        """
-        Perform an internet speed test using the speedtest-cli module.
-
-        :param __event_emitter__: Optional callable for emitting events to OpenWebUI.
-        :return: JSON string containing download, upload speeds, and ping.
-        """
+    async def mtu_discovery(self, args: MTUDiscoveryInput, __event_emitter__: Callable[[dict], Any] = None) -> str:
         emitter = EventEmitter(__event_emitter__)
-        await emitter.progress_update("Running internet speed test...")
+        await emitter.emit(f"Discovering MTU for {args.target}...")
 
         try:
-            st = speedtest.Speedtest()
-            st.get_best_server()
-            download_speed = st.download() / 1_000_000  # Convert to Mbps
-            upload_speed = st.upload() / 1_000_000  # Convert to Mbps
-            ping = st.results.ping
-
-            results = {
-                "Download Speed (Mbps)": download_speed,
-                "Upload Speed (Mbps)": upload_speed,
-                "Ping (ms)": ping,
-            }
-
-            await emitter.success_update("Internet speed test complete!")
-            return json.dumps(results)
+            mtu = 1500  # Starting MTU value
+            command = ['ping', '-c', '1', '-M', 'do', '-s', str(mtu), args.target]
+            while mtu > 0:
+                result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                if 'Frag needed' in result.stderr:
+                    mtu -= 10  # Decrease packet size
+                else:
+                    break
+                command = ['ping', '-c', '1', '-M', 'do', '-s', str(mtu), args.target]
+            await emitter.emit(f"MTU discovery for {args.target} complete. MTU: {mtu}", "success", True)
+            return f"MTU for {args.target} is {mtu}"
         except Exception as e:
-            await emitter.error_update(f"Error during speed test: {str(e)}")
-            return json.dumps({"error": f"Error during speed test: {str(e)}"})
+            await emitter.emit(f"MTU discovery error: {str(e)}", "error", True)
+            return str(e)
 
+    async def traceroute(self, args: TraceRouteInput, __event_emitter__: Callable[[dict], Any] = None) -> str:
+        emitter = EventEmitter(__event_emitter__)
+        await emitter.emit(f"Running traceroute to {args.target}...")
 
-# Function valves
-async def network_scan_valve(
-    args: NetworkScanInput, __event_emitter__: Callable[[dict], Any] = None
-) -> str:
-    toolkit = GeneralNetworkingToolkit()
-    return await toolkit.network_scan(args.target, __event_emitter__)
+        try:
+            command = ['traceroute', args.target]
+            result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            if result.returncode == 0:
+                await emitter.emit(f"Traceroute to {args.target} completed.", "success", True)
+                return result.stdout
+            else:
+                await emitter.emit(f"Traceroute to {args.target} failed.", "error", True)
+                return result.stderr
+        except Exception as e:
+            await emitter.emit(f"Traceroute error: {str(e)}", "error", True)
+            return str(e)
 
+    async def multi_protocol_test(self, args: MultiProtocolTestInput, __event_emitter__: Callable[[dict], Any] = None) -> str:
+        emitter = EventEmitter(__event_emitter__)
+        await emitter.emit(f"Running multi-protocol test for {args.target}...")
 
-async def speed_test_valve(
-    args: dict, __event_emitter__: Callable[[dict], Any] = None
-) -> str:
-    toolkit = GeneralNetworkingToolkit()
-    return await toolkit.speed_test(__event_emitter__)
+        results = []
+        try:
+            ping_result = await self.ping_test(PingTestInput(target=args.target), __event_emitter__)
+            results.append(f"Ping Test:\n{ping_result}")
 
+            traceroute_result = await self.traceroute(TraceRouteInput(target=args.target), __event_emitter__)
+            results.append(f"Traceroute:\n{traceroute_result}")
 
-# Register pipelines for OpenWebUI
+            mtu_result = await self.mtu_discovery(MTUDiscoveryInput(target=args.target), __event_emitter__)
+            results.append(f"MTU Discovery:\n{mtu_result}")
+
+            await emitter.emit(f"Multi-protocol test for {args.target} complete.", "success", True)
+            return "\n\n".join(results)
+        except Exception as e:
+            await emitter.emit(f"Multi-protocol test error: {str(e)}", "error", True)
+            return str(e)
+
+# Pipelines
+
 def register_pipelines():
-    """
-    Register all pipelines for OpenWebUI to recognize and use.
-    """
-    pipelines = {
-        "network_scan_pipeline": {
-            "valves": [network_scan_valve],
-            "filters": [],
-            "pipes": [],
-        },
-        "speed_test_pipeline": {
-            "valves": [speed_test_valve],
-            "filters": [],
-            "pipes": [],
-        },
+    return {
+        "general_networking_pipeline": {
+            "valves": [ping_test_valve, mtu_discovery_valve, traceroute_valve, multi_protocol_test_valve],
+            "filters": [ip_validation_filter, response_time_filter],  # Example filters to be implemented
+            "pipes": [multi_protocol_connectivity_pipe, parallel_traceroute_pipe]  # Example pipes to be implemented
+        }
     }
-    return pipelines
 
+# Valves
+async def ping_test_valve(args: PingTestInput, __event_emitter__: Callable[[dict], Any] = None) -> str:
+    tools = Tools()
+    return await tools.ping_test(args, __event_emitter__)
 
-# This function is called by OpenWebUI to register pipelines
+async def mtu_discovery_valve(args: MTUDiscoveryInput, __event_emitter__: Callable[[dict], Any] = None) -> str:
+    tools = Tools()
+    return await tools.mtu_discovery(args, __event_emitter__)
+
+async def traceroute_valve(args: TraceRouteInput, __event_emeter__: Callable[[dict], Any] = None) -> str:
+    tools = Tools()
+    return await tools.traceroute(args, __event_emitter__)
+
+async def multi_protocol_test_valve(args: MultiProtocolTestInput, __event_emitter__: Callable[[dict], Any] = None) -> str:
+    tools = Tools()
+    return await tools.multi_protocol_test(args, __event_emitter__)
+
+# Filters
+async def ip_validation_filter(args: dict, __event_emitter__: Callable[[dict], Any] = None) -> dict:
+    # Implement IP address validation logic
+    return args
+
+async def response_time_filter(args: dict, __event_emitter__: Callable[[dict], Any] = None) -> dict:
+    # Implement response time filtering logic
+    return args
+
+# Pipes
+async def multi_protocol_connectivity_pipe(args: dict, __event_emitter__: Callable[[dict], Any] = None) -> str:
+    # Implement multi-protocol connectivity test logic
+    return "Multi-Protocol Connectivity Test Complete"
+
+async def parallel_traceroute_pipe(args: dict, __event_emitter__: Callable[[dict], Any] = None) -> str:
+    # Implement parallel traceroute logic
+    return "Parallel Traceroute Complete"
+
+# Register pipelines
 pipelines = register_pipelines()
+
+if __name__ == "__main__":
+    import asyncio
+
+    async def test_tools():
+        tools = Tools()
+        print(await tools.ping_test(PingTestInput(target="8.8.8.8")))
+        print(await tools.mtu_discovery(MTUDiscoveryInput(target="8.8.8.8")))
+        print(await tools.traceroute(TraceRouteInput(target="8.8.8.8")))
+        print(await tools.multi_protocol_test(MultiProtocolTestInput(target="8.8.8.8")))
+
+    asyncio.run(test_tools())
